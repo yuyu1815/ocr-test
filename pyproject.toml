@@ -15,3 +15,6 @@ dependencies = [
     "opencv-python",
     "transformers @ git+https://github.com/huggingface/transformers",
 ]
+
+[tool.uv]
+prerelease = "allow"
