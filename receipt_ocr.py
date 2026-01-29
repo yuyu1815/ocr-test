@@ -23,11 +23,11 @@ def run_ocr(image_path):
     Runs llama.cpp CLI to perform OCR on the given image.
     """
     if not os.path.exists(LLAMA_CLI_PATH):
-        print(f"Error: llama-cli not found at {LLAMA_CLI_PATH}")
+        print(f"エラー: llama-cli が見つかりません: {LLAMA_CLI_PATH}")
         return
     
     if not os.path.exists(MODEL_PATH):
-        print(f"Error: Model not found at {MODEL_PATH}")
+        print(f"エラー: モデルが見つかりません: {MODEL_PATH}")
         return
 
     # Construct the command
@@ -47,7 +47,7 @@ def run_ocr(image_path):
         "-c", "2048"          # Context window
     ]
 
-    print("\n[INFO] Running OCR... Please wait.")
+    print("\n[情報] OCRを実行中... お待ちください。")
     try:
         # Run command and capture output
         result = subprocess.run(
@@ -59,35 +59,35 @@ def run_ocr(image_path):
         )
         
         if result.returncode == 0:
-            print("\n" + "="*20 + " OCR RESULT " + "="*20)
+            print("\n" + "="*20 + " OCR 結果 " + "="*20)
             print(result.stdout)
-            print("="*52 + "\n")
+            print("="*50 + "\n")
         else:
-            print(f"\n[ERROR] OCR failed with code {result.returncode}")
+            print(f"\n[エラー] OCRがコード {result.returncode} で失敗しました")
             print(result.stderr)
             
     except Exception as e:
-        print(f"\n[ERROR] execution failed: {e}")
+        print(f"\n[エラー] 実行に失敗しました: {e}")
 
 def main():
     # Initialize Camera
     cap = cv2.VideoCapture(CAMERA_ID)
     if not cap.isOpened():
-        print("Error: Could not open camera.")
+        print("エラー: カメラを開けませんでした。")
         sys.exit(1)
 
     # Set resolution
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 
-    print("Camera initialized.")
-    print("Press 'Enter' to capture and run OCR.")
-    print("Press 'q' to quit.")
+    print("カメラを初期化しました。")
+    print("「Enter」キーを押して撮影＆OCR実行")
+    print("「q」キーで終了")
 
     while True:
         ret, frame = cap.read()
         if not ret:
-            print("Error: Failed to capture frame.")
+            print("エラー: フレームの取得に失敗しました。")
             break
 
         # Display the resulting frame
@@ -103,7 +103,7 @@ def main():
             
             # Save the frame
             cv2.imwrite(filename, frame)
-            print(f"\n[INFO] Captured {filename}")
+            print(f"\n[情報] 画像を保存しました: {filename}")
             
             # Run OCR
             run_ocr(filename)
