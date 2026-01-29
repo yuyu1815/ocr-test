@@ -43,9 +43,26 @@ def run_ocr(model, processor, device, dtype, image_path):
 
         print("[処理中] 推論を実行しています...")
         
-        inputs = processor(
-            images=image,
-            text="<|user|>\n<|image|>\nConvert this receipt to markdown.<|end|>\n<|assistant|>\n",
+        print("[処理中] 推論を実行しています...")
+        
+        # Use apply_chat_template to correctly handle image tokens
+        # The processor expects a list of messages.
+        conversation = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image}, 
+                    {"type": "text", "text": "Convert this receipt to markdown."}
+                ]
+            }
+        ]
+
+        # apply_chat_template returns input_ids and other necessary inputs already formatted
+        inputs = processor.apply_chat_template(
+            conversation,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
             return_tensors="pt"
         )
         

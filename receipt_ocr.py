@@ -53,9 +53,22 @@ def run_ocr(model, processor, device, dtype, image_path):
         image = Image.open(image_path).convert("RGB") # Ensure RGB
 
         # Using generic processor call
-        inputs = processor(
-            images=image,
-            text="<|user|>\n<|image|>\nConvert this receipt to markdown.<|end|>\n<|assistant|>\n",
+        # Use apply_chat_template to correctly handle image tokens
+        conversation = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image}, 
+                    {"type": "text", "text": "Convert this receipt to markdown."}
+                ]
+            }
+        ]
+
+        inputs = processor.apply_chat_template(
+            conversation,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
             return_tensors="pt"
         )
         
