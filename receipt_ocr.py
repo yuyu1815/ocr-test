@@ -44,31 +44,23 @@ def load_model():
     print(f"[情報] モデル読み込み完了。デバイス: {device}")
     return model, processor, device, dtype
 
-def run_ocr(model, processor, device, dtype, image_input):
-    print("\n[情報] OCRを実行中... お待ちください。")
+def run_ocr(model, processor, device, dtype, image_path):
+    print(f"\n[処理中] 画像を読み込んでいます: {image_path}")
+    print("[処理中] OCR推論を実行しています... (数秒〜数分かかります)")
+    
     try:
-        # Check if input is a file path or a numpy array (OpenCV frame)
-        if isinstance(image_input, str):
-            image = Image.open(image_input).convert("RGB")
-        else:
-            # Assume numpy array (BGR from OpenCV)
-            # Convert BGR to RGB
-            rgb_frame = cv2.cvtColor(image_input, cv2.COLOR_BGR2RGB)
-            image = Image.fromarray(rgb_frame)
+        # Load image via PIL
+        image = Image.open(image_path).convert("RGB") # Ensure RGB
 
-        # Structure as per snippet
-        # conversation = [{"role": "user", "content": [{"type": "image", "image": image}]}] 
-        
-        # Using generic processor call as it's most robust for 'image-to-text' tasks
+        # Using generic processor call
         inputs = processor(
             images=image,
-            text="<|user|>\n<|image|>\nConvert this receipt to markdown.<|end|>\n<|assistant|>\n", # Construct prompt manually if chat template is tricky for local
+            text="<|user|>\n<|image|>\nConvert this receipt to markdown.<|end|>\n<|assistant|>\n",
             return_tensors="pt"
         )
         
         # Move inputs to device
         inputs = {k: v.to(device) for k, v in inputs.items()}
-        # Handle dtype for floating point types (pixel_values)
         if "pixel_values" in inputs and inputs["pixel_values"].dtype != dtype:
              inputs["pixel_values"] = inputs["pixel_values"].to(dtype)
 
@@ -80,9 +72,17 @@ def run_ocr(model, processor, device, dtype, image_input):
         generated_ids = output_ids[0, inputs["input_ids"].shape[1]:]
         output_text = processor.decode(generated_ids, skip_special_tokens=True)
         
+        # Save to Markdown
+        base_name = os.path.splitext(image_path)[0]
+        md_filename = f"{base_name}.md"
+        
+        with open(md_filename, "w", encoding="utf-8") as f:
+            f.write(output_text)
+
         print("\n" + "="*20 + " OCR 結果 " + "="*20)
         print(output_text)
-        print("="*50 + "\n")
+        print("="*50)
+        print(f"[完了] 結果を保存しました: {md_filename}\n")
 
     except Exception as e:
         print(f"\n[エラー] OCR実行に失敗しました: {e}")
@@ -107,7 +107,7 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 
     print("カメラを初期化しました。")
-    print("「Enter」キーを押して撮影＆OCR実行")
+    print("「Enter」キーを押して撮影 ＆ OCR開始")
     print("「q」キーで終了")
 
     while True:
@@ -122,12 +122,21 @@ def main():
         if key == ord('q'):
             break
         elif key == 13: # Enter
-            # Run OCR directly on the frame (in-memory)
-            run_ocr(model, processor, device, dtype, frame)
+            print("\n" + "-"*30)
+            print("[操作] 撮影しました！処理を開始します...")
             
-            # Optional: Save for debugging logs if needed, but not required for OCR flow
-            # timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            # cv2.imwrite(f"receipt_{timestamp}.jpg", frame)
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"receipt_{timestamp}.jpg"
+            
+            # Save the frame first
+            cv2.imwrite(filename, frame)
+            print(f"[保存] 画像を保存しました: {filename}")
+            
+            # Run OCR on the saved file
+            run_ocr(model, processor, device, dtype, filename)
+            
+            print("[待機] 次の撮影準備完了。Enterキーを押してください。")
+            print("-"*30 + "\n")
 
     cap.release()
     cv2.destroyAllWindows()
