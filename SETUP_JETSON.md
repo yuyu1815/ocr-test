@@ -6,38 +6,27 @@
 
 Jetson Nano (4GB) でTransformersを使用するため、メモリ不足になる可能性が高いです。**Swap領域の拡張** を強く推奨します。
 
-## 1. 必要なツールのインストール
+## 1. 必要なツールのインストール (システム側)
 
 ```bash
 sudo apt update
 sudo apt install -y git cmake build-essential python3-pip libopencv-dev python3-opencv libopenblas-dev
 ```
 
-## 2. Pythonライブラリのインストール
+## 2. 一括インストール (uv使用)
 
-`uv` (高速なインストーラ) を推奨していますが、通常の `pip` でも可能です。
+リポジトリ内の `install.sh` を実行するだけで、Python環境のセットアップが完了します。
 
 ```bash
-# uvのインストール (オプション)
-pip install uv
-
-# Transformers と依存関係のインストール
-# LightOnOCR-2 はtransformersの最新版(dev/source) が必要
-pip install git+https://github.com/huggingface/transformers
-pip install torch pillow pypdfium2 accelerate protobuf scipy
+bash install.sh
 ```
 
-※ `torch` はJetson Nano用のものをインストール済みであることを想定しています。未インストールの場合は NVIDIA のフォーラム等から JetPack 4.6 (Python 3.6) に対応した `pip install` 可能な wheel を探して入れてください（例: `torch-1.10.0` など）。
-※ 本スクリプトは Python 3.6 以降で動作します。
+## 3. 実行
 
-## 3. モデルについて
-
-スクリプト初回実行時に、Hugging Face Hub からモデル `lightonai/LightOnOCR-2-1B` が自動的にダウンロードされます（約数GB）。
-インターネット接続が必要です。
-
-## 4. 実行
+インストールが完了したら、以下のコマンドで実行してください。
 
 ```bash
+source .venv/bin/activate
 python3 receipt_ocr.py
 ```
 
