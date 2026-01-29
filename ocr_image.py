@@ -42,9 +42,7 @@ def run_ocr(model, processor, device, dtype, image_path):
         image = Image.open(image_path).convert("RGB")
 
         print("[処理中] 推論を実行しています...")
-        
-        print("[処理中] 推論を実行しています...")
-        
+                
         # Use apply_chat_template to correctly handle image tokens
         # The processor expects a list of messages.
         conversation = [
