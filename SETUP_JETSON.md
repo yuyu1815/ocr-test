@@ -15,10 +15,16 @@ sudo apt install -y git cmake build-essential python3-pip libopencv-dev python3-
 
 ## 2. 一括インストール (uv使用)
 
-リポジトリ内の `install.sh` を実行するだけで、Python環境のセットアップが完了します。
+`pyproject.toml` に依存関係が定義されています。以下のスクリプトで一括インストールできます。
 
 ```bash
 bash install.sh
+```
+
+または手動で行う場合:
+
+```bash
+uv sync --prerelease=allow
 ```
 
 ## 3. 実行
