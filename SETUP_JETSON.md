@@ -1,60 +1,45 @@
-# Jetson Nano Setup Guide for LightOnOCR
+# Jetson Nano Setup Guide for LightOnOCR (Transformers版)
 
-このガイドは、Jetson Nano上で LightOnOCR-2-1B を動作させるための手順書です。
+このガイドは、Jetson Nano上で LightOnOCR-2-1B を **Transformersライブラリ** を使用して動作させるための手順書です。
+
+## ⚠️ メモリに関する重要事項
+
+Jetson Nano (4GB) でTransformersを使用するため、メモリ不足になる可能性が高いです。**Swap領域の拡張** を強く推奨します。
 
 ## 1. 必要なツールのインストール
 
-ターミナルを開き、以下のコマンドを実行してください。
-
 ```bash
 sudo apt update
-sudo apt install -y git cmake build-essential python3-pip libopencv-dev python3-opencv
+sudo apt install -y git cmake build-essential python3-pip libopencv-dev python3-opencv libopenblas-dev
 ```
 
-## 2. llama.cpp のビルド
+## 2. Pythonライブラリのインストール
 
-`llama.cpp` をクローンしてビルドします。Jetson Nano (CUDA 10.2) 向けの設定です。
+`uv` (高速なインストーラ) を推奨していますが、通常の `pip` でも可能です。
 
 ```bash
-git clone https://github.com/ggerganov/llama.cpp
-cd llama.cpp
+# uvのインストール (オプション)
+pip install uv
 
-# CUDAサポート付きでビルド (失敗する場合は GGML_CUDA=0 にしてください)
-make clean
-GGML_CUDA=1 make -j$(nproc)
+# Transformers と依存関係のインストール
+# LightOnOCR-2 はtransformersの最新版(dev/source) が必要
+pip install git+https://github.com/huggingface/transformers
+pip install torch pillow pypdfium2 accelerate protobuf scipy
 ```
 
-ビルドが完了すると、`llama-cli` (または `main`) という実行ファイルが生成されます。
+※ `torch` はJetson Nano用のものをインストール済みであることを想定しています。未インストールの場合は NVIDIA のフォーラム等から JetPack 4.6 (Python 3.6) に対応した `pip install` 可能な wheel を探して入れてください（例: `torch-1.10.0` など）。
+※ 本スクリプトは Python 3.6 以降で動作します。
 
-## 3. モデルのダウンロード
+## 3. モデルについて
 
-`models` ディレクトリを作成し、そこにモデルをダウンロードします。
+スクリプト初回実行時に、Hugging Face Hub からモデル `lightonai/LightOnOCR-2-1B` が自動的にダウンロードされます（約数GB）。
+インターネット接続が必要です。
 
-```bash
-mkdir -p models
-cd models
-
-# Language Model (Q8_0)
-wget -O LightOnOCR-2-1B-Q8_0.gguf https://huggingface.co/noctrex/LightOnOCR-2-1B-GGUF/resolve/main/LightOnOCR-2-1B-Q8_0.gguf
-
-# Vision Projector (mmproj)
-wget -O mmproj-model-f16.gguf https://huggingface.co/noctrex/LightOnOCR-2-1B-GGUF/resolve/main/mmproj-model-f16.gguf
-
-cd ..
-```
-
-## 4. 実行スクリプトの配置
-
-作成した `receipt_ocr.py` を `llama.cpp` ディレクトリと同じ階層（またはわかりやすい場所）に配置します。
-
-## 5. 実行
-
-カメラを接続し、以下のコマンドで実行します。
+## 4. 実行
 
 ```bash
 python3 receipt_ocr.py
 ```
 
-- カメラプレビューが表示されます。
-- レシートを映して **「Enter」キー** を押すと撮影＆認識が始まります。
-- **「q」キー** で終了します。
+- 初回はモデルのダウンロードに時間がかかります。
+- メモリ不足で落ちる場合は、他のアプリを終了してください。

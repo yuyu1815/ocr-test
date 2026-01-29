@@ -1,82 +1,118 @@
 import cv2
-import subprocess
+import torch
+from transformers import LightOnOcrForConditionalGeneration, LightOnOcrProcessor
+from PIL import Image
+import datetime
 import os
 import sys
-import datetime
 
 # --- Configuration ---
-# Path to llama.cpp executable (llama-cli or main)
-# Adjust this path to where your compiled llama-cli is located
-LLAMA_CLI_PATH = "./llama.cpp/llama-cli" 
-
-# Path to the GGUF models
-MODEL_PATH = "./llama.cpp/models/LightOnOCR-2-1B-Q8_0.gguf"
-MMPROJ_PATH = "./llama.cpp/models/mmproj-model-f16.gguf"
-
-# Camera Configuration
-CAMERA_ID = 0  # 0 is usually the default USB camera
+CAMERA_ID = 0
 FRAME_WIDTH = 1280
 FRAME_HEIGHT = 720
 
-def run_ocr(image_path):
-    """
-    Runs llama.cpp CLI to perform OCR on the given image.
-    """
-    if not os.path.exists(LLAMA_CLI_PATH):
-        print(f"エラー: llama-cli が見つかりません: {LLAMA_CLI_PATH}")
-        return
-    
-    if not os.path.exists(MODEL_PATH):
-        print(f"エラー: モデルが見つかりません: {MODEL_PATH}")
-        return
+# Model ID
+# Using the base model. To use 8-bit, bitsandbytes requires specific setup on Jetson.
+# If Q8_0 GGUF was intended, this script CANNOT load it directly. 
+# We assume 'bitsandbytes' is available or we load in float16/float32.
+MODEL_ID = "lightonai/LightOnOCR-2-1B" 
 
-    # Construct the command
-    # LightOnOCR prompt template usually involves just the image processing or a specific prompt.
-    # We will use a generic prompt for document conversion if needed, but often VLMs just describe the image if no prompt is given.
-    # For LightOnOCR, the docs suggest specific conversation templates, but for raw llama-cli, we can try a simple user prompt.
-    prompt = "Convert this receipt to markdown."
-    
-    cmd = [
-        LLAMA_CLI_PATH,
-        "-m", MODEL_PATH,
-        "--mmproj", MMPROJ_PATH,
-        "--image", image_path,
-        "-p", prompt,
-        "--n-predict", "1024", # Max tokens to generate
-        "--temp", "0.1",      # Low temperature for deterministic output
-        "-c", "2048"          # Context window
-    ]
+def load_model():
+    print("[情報] モデルを読み込み中... (時間がかかります)")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # Jetson Nano usually supports float16, but bfloat16 might be an issue.
+    # Defaulting to float16 for memory saving if on MPS/CUDA.
+    dtype = torch.float16 if device == "cuda" else torch.float32
 
+    try:
+        # Attempt to load with 8bit quantization if bitsandbytes is available
+        # Note: 'load_in_8bit=True' requires bitsandbytes library
+        model = LightOnOcrForConditionalGeneration.from_pretrained(
+            MODEL_ID,
+            torch_dtype=dtype,
+            # load_in_8bit=True, # Uncomment if bitsandbytes is successfully installed
+            device_map="auto"
+        )
+    except Exception as e:
+        print(f"[警告] 8bit/auto読み込みに失敗しました。CPU/標準モードで試行します: {e}")
+        model = LightOnOcrForConditionalGeneration.from_pretrained(
+            MODEL_ID,
+            torch_dtype=torch.float32
+        ).to(device)
+
+    processor = LightOnOcrProcessor.from_pretrained(MODEL_ID)
+    print(f"[情報] モデル読み込み完了。デバイス: {device}")
+    return model, processor, device, dtype
+
+def run_ocr(model, processor, device, dtype, image_path):
     print("\n[情報] OCRを実行中... お待ちください。")
     try:
-        # Run command and capture output
-        result = subprocess.run(
-            cmd, 
-            capture_output=True, 
-            text=True, 
-            encoding='utf-8',
-            errors='replace'
+        # Load image via PIL (Transformers expects PIL)
+        image = Image.open(image_path).convert("RGB") # Ensure RGB
+
+        # Prepare conversation (template from user request)
+        # Note: Local file loading for 'url' in chat template might need tweaking depending on processor version,
+        # but passing the PIL image directly to the 'images' argument of the processor is usually safer/faster than a fake URL.
+        # However, following the user's snippet structure:
+        
+        # Structure as per snippet
+        conversation = [{"role": "user", "content": [{"type": "image", "image": image}]}] 
+        # Using 'image' key with actual PIL object is often supported in newer processors, 
+        # otherwise we might need the URL hack or base64. 
+        # Let's try the processor's standard apply_chat_template if it supports passing PIL objects in list.
+        # If not, we fall back to standard __call__.
+        
+        # Simplified direct call for robustness if chat template fails on local images without URL
+        # inputs = processor(text=prompt, images=image, return_tensors="pt").to(device, dtype)
+        
+        # User snippet specifically used apply_chat_template. Let's try to adapt it for local execution.
+        # The 'url' field in snippet was a web URL. construct a data URI or pass object?
+        # transformers often handles PIL objects if we pass 'images' argument properly.
+        
+        # Using generic processor call as it's most robust for 'image-to-text' tasks
+        inputs = processor(
+            images=image,
+            text="<|user|>\n<|image|>\nConvert this receipt to markdown.<|end|>\n<|assistant|>\n", # Construct prompt manually if chat template is tricky for local
+            return_tensors="pt"
         )
         
-        if result.returncode == 0:
-            print("\n" + "="*20 + " OCR 結果 " + "="*20)
-            print(result.stdout)
-            print("="*50 + "\n")
-        else:
-            print(f"\n[エラー] OCRがコード {result.returncode} で失敗しました")
-            print(result.stderr)
-            
+        # Move inputs to device
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+        # Handle dtype for floating point types (pixel_values)
+        if "pixel_values" in inputs and inputs["pixel_values"].dtype != dtype:
+             inputs["pixel_values"] = inputs["pixel_values"].to(dtype)
+
+        # Generate
+        with torch.no_grad():
+            output_ids = model.generate(**inputs, max_new_tokens=1024)
+        
+        # Decode
+        generated_ids = output_ids[0, inputs["input_ids"].shape[1]:]
+        output_text = processor.decode(generated_ids, skip_special_tokens=True)
+        
+        print("\n" + "="*20 + " OCR 結果 " + "="*20)
+        print(output_text)
+        print("="*50 + "\n")
+
     except Exception as e:
-        print(f"\n[エラー] 実行に失敗しました: {e}")
+        print(f"\n[エラー] OCR実行に失敗しました: {e}")
+        import traceback
+        traceback.print_exc()
 
 def main():
+    # Load model once at startup
+    try:
+        model, processor, device, dtype = load_model()
+    except Exception as e:
+        print(f"致命的なエラー: モデルの初期化に失敗しました。\n{e}")
+        return
+
     # Initialize Camera
     cap = cv2.VideoCapture(CAMERA_ID)
     if not cap.isOpened():
         print("エラー: カメラを開けませんでした。")
         sys.exit(1)
 
-    # Set resolution
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 
@@ -90,28 +126,22 @@ def main():
             print("エラー: フレームの取得に失敗しました。")
             break
 
-        # Display the resulting frame
-        cv2.imshow('Receipt OCR - Press Enter to Capture', frame)
-
+        cv2.imshow('Receipt OCR (Transformers) - Press Enter to Capture', frame)
         key = cv2.waitKey(1) & 0xFF
 
         if key == ord('q'):
             break
-        elif key == 13: # Enter key
+        elif key == 13: # Enter
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"receipt_{timestamp}.jpg"
-            
-            # Save the frame
             cv2.imwrite(filename, frame)
+            
             print(f"\n[情報] 画像を保存しました: {filename}")
+            run_ocr(model, processor, device, dtype, filename)
             
-            # Run OCR
-            run_ocr(filename)
-            
-            # Optional: Clean up file
-            # os.remove(filename) 
+            # optional cleanup
+            # os.remove(filename)
 
-    # When everything done, release the capture
     cap.release()
     cv2.destroyAllWindows()
 
