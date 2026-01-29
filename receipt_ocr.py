@@ -44,30 +44,20 @@ def load_model():
     print(f"[情報] モデル読み込み完了。デバイス: {device}")
     return model, processor, device, dtype
 
-def run_ocr(model, processor, device, dtype, image_path):
+def run_ocr(model, processor, device, dtype, image_input):
     print("\n[情報] OCRを実行中... お待ちください。")
     try:
-        # Load image via PIL (Transformers expects PIL)
-        image = Image.open(image_path).convert("RGB") # Ensure RGB
+        # Check if input is a file path or a numpy array (OpenCV frame)
+        if isinstance(image_input, str):
+            image = Image.open(image_input).convert("RGB")
+        else:
+            # Assume numpy array (BGR from OpenCV)
+            # Convert BGR to RGB
+            rgb_frame = cv2.cvtColor(image_input, cv2.COLOR_BGR2RGB)
+            image = Image.fromarray(rgb_frame)
 
-        # Prepare conversation (template from user request)
-        # Note: Local file loading for 'url' in chat template might need tweaking depending on processor version,
-        # but passing the PIL image directly to the 'images' argument of the processor is usually safer/faster than a fake URL.
-        # However, following the user's snippet structure:
-        
         # Structure as per snippet
-        conversation = [{"role": "user", "content": [{"type": "image", "image": image}]}] 
-        # Using 'image' key with actual PIL object is often supported in newer processors, 
-        # otherwise we might need the URL hack or base64. 
-        # Let's try the processor's standard apply_chat_template if it supports passing PIL objects in list.
-        # If not, we fall back to standard __call__.
-        
-        # Simplified direct call for robustness if chat template fails on local images without URL
-        # inputs = processor(text=prompt, images=image, return_tensors="pt").to(device, dtype)
-        
-        # User snippet specifically used apply_chat_template. Let's try to adapt it for local execution.
-        # The 'url' field in snippet was a web URL. construct a data URI or pass object?
-        # transformers often handles PIL objects if we pass 'images' argument properly.
+        # conversation = [{"role": "user", "content": [{"type": "image", "image": image}]}] 
         
         # Using generic processor call as it's most robust for 'image-to-text' tasks
         inputs = processor(
@@ -132,15 +122,12 @@ def main():
         if key == ord('q'):
             break
         elif key == 13: # Enter
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"receipt_{timestamp}.jpg"
-            cv2.imwrite(filename, frame)
+            # Run OCR directly on the frame (in-memory)
+            run_ocr(model, processor, device, dtype, frame)
             
-            print(f"\n[情報] 画像を保存しました: {filename}")
-            run_ocr(model, processor, device, dtype, filename)
-            
-            # optional cleanup
-            # os.remove(filename)
+            # Optional: Save for debugging logs if needed, but not required for OCR flow
+            # timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            # cv2.imwrite(f"receipt_{timestamp}.jpg", frame)
 
     cap.release()
     cv2.destroyAllWindows()
